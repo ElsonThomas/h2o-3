@@ -16,6 +16,7 @@ import water.fvec.*;
 import water.fvec.Vec.VectorGroup;
 
 import java.util.Arrays;
+import java.util.HashMap;
 import java.util.Map;
 
 /**
@@ -26,23 +27,69 @@ public class MakeGLMModelHandler extends Handler {
     GLMModel model = DKV.getGet(args.model.key());
     if(model == null)
       throw new IllegalArgumentException("missing source model " + args.model);
-    String [] names = model._output.coefficientNames();
-    Map<String,Double> coefs = model.coefficients();
+    String [] names = model._output.coefficientNames(); // coefficient names in order and with Intercept
+    Map<String,Double> coefs = model.coefficients();  // multinomial, classID_coeffNames
+    if (model._output._multinomial) {
+      names = multinomialCoefNames(names, model);
+      coefs = modifyCoeffs(coefs);
+    }
+    if (args.beta.length != names.length) {
+      throw new IllegalArgumentException("model coefficient length " + names.length + " is different from coefficient" +
+              " provided by user " + args.beta.length + ".\n model coefficients needed are:\n" + String.join("\n", names));
+    }
     for(int i = 0; i < args.names.length; ++i)
       coefs.put(args.names[i],args.beta[i]);
-    double [] beta = model.beta().clone();
+    double [] beta = model.beta().clone(); // coefficients with classes stacked on top of each other
     for(int i = 0; i < beta.length; ++i)
       beta[i] = coefs.get(names[i]);
     GLMModel m = new GLMModel(args.dest != null?args.dest.key():Key.make(),model._parms,null, model._ymu, Double.NaN, Double.NaN, -1);
     DataInfo dinfo = model.dinfo();
     dinfo.setPredictorTransform(TransformType.NONE);
-    m._output = new GLMOutput(model.dinfo(),model._output._names,model._output._column_types,  model._output._domains, model._output.coefficientNames(), model._output._binomial, beta);
+    if (model._output._multinomial)
+      m._output = new GLMOutput(model.dinfo(), model._output._names, model._output._column_types, 
+              model._output._domains, model._output.coefficientNames(), beta);
+    else
+      m._output = new GLMOutput(model.dinfo(), model._output._names, model._output._column_types, 
+              model._output._domains, model._output.coefficientNames(), model._output._binomial, beta);
     DKV.put(m._key, m);
     GLMModelV3 res = new GLMModelV3();
     res.fillFromImpl(m);
     return res;
   }
-
+  
+  // model._output.coefficients will return a HashMap of coefficient names like 1_C1 instead of C1_1.  I 
+  // need to change the coefficient names to the correct order as C1_1 in args.names
+  public Map<String, Double> modifyCoeffs(Map<String,Double> coefs) {
+    Map<String, Double> newCoefs = new HashMap<>();
+    for (Map.Entry<String,Double> entry : coefs.entrySet()) {
+      String name = entry.getKey();
+      String[] names = name.split("_");
+      String newNames = names[1]+"_"+names[0];
+      Double value = entry.getValue();
+      newCoefs.put(newNames, value);
+      
+    }
+      return newCoefs;
+  }
+  
+  // calling model._output.coefficientNames() will only return you names like C1, C2, ..., Intercept.  However
+  // for multinomials, there are N classes of coefficients which are writtenb as C1_1, C2_1, to denote the
+  // coefficients for each class.  This method is to take the coefficient names of one class and extend it to
+  // coefficient names for all N classes.
+  public String[] multinomialCoefNames(String[] names, GLMModel model) {
+    String[] responseDomain = model._output._domains[model._output._domains.length-1];
+    String[] multinomialNames = new String[names.length*responseDomain.length];
+    int coeffLen = names.length;
+    int responseLen = responseDomain.length;
+    int counter = 0;
+    for (int respInd = 0; respInd < responseLen; respInd++) {
+      for (int coeffInd = 0; coeffInd < coeffLen; coeffInd++) {
+        multinomialNames[counter++] = names[coeffInd] + "_" + responseDomain[respInd];
+      }
+    }
+    return multinomialNames;
+  }
+  
   public GLMRegularizationPathV3 extractRegularizationPath(int v, GLMRegularizationPathV3 args) {
     GLMModel model = DKV.getGet(args.model.key());
     if(model == null)

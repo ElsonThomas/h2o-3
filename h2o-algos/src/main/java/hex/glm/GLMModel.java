@@ -1166,6 +1166,20 @@ public class GLMModel extends Model<GLMModel,GLMModel.GLMParameters,GLMModel.GLM
       _submodels = new Submodel[]{new Submodel(0,beta,-1,Double.NaN,Double.NaN)};
     }
 
+    public GLMOutput(DataInfo dinfo, String[] column_names, String[] column_types, String[][] domains, 
+                     String[] coefficient_names, double[] beta) {
+      super(dinfo._weights, dinfo._offset, dinfo._fold);
+      _dinfo = dinfo.clone();
+      setNames(column_names, column_types);
+      _domains = domains;
+      _coefficient_names = coefficient_names;
+      _multinomial = true;
+      _nclasses = beta.length/coefficient_names.length;
+      assert !ArrayUtils.hasNaNsOrInfs(beta);
+      _global_beta_multinomial=ArrayUtils.convertTo2DMatrix(beta, coefficient_names.length);
+      _submodels = new Submodel[]{new Submodel(0,beta,-1,Double.NaN,Double.NaN)};
+    }
+
     public GLMOutput(DataInfo dinfo, String[] column_names, String[] column_types, String[][] domains, String[] coefficient_names, boolean binomial, double[] beta, double[] ubeta) {
       this(dinfo,column_names,column_types, domains,coefficient_names,binomial);
       assert !ArrayUtils.hasNaNsOrInfs(beta);
